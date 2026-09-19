@@ -24,7 +24,9 @@ const PRESETS = [
  {name:'日落木色',materials:['wood','tiger','agate','gold'],beads:Array.from({length:18},(_,i)=>({material:i%6===0?'gold':i%4===0?'agate':i%3===0?'tiger':'wood',size:i%6===0?6:10}))}
 ];
 const {Engine,Bodies,Body,Composite} = Matter;
-const engine = Engine.create({gravity:{x:0,y:0,scale:0},positionIterations:8,velocityIterations:8,enableSleeping:true});
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const dynamics = new BeadDynamics.Controller(Matter,{center:CENTER,radius:TRAY_RADIUS,reducedMotion});
+const engine = dynamics.engine;
 const canvas = $('bead-canvas'), ctx = canvas.getContext('2d');
 const atlas = new Image();
 atlas.src = './assets/bead-atlas.png';
@@ -32,7 +34,6 @@ let atlasReady = false, serial = 0, scale = 5.3, ringRadius = 0, addSize = 8, fi
 let selected = null, drag = null, mode = 'strung', beads = [], targets = [];
 let undoStack = [], redoStack = [], saveTimer, toastTimer, lastTime = 0, accumulator = 0, lastStoreTime = 0;
 const STORAGE = 'bead-atelier.draft.v1', SAVES = 'bead-atelier.collection.v1';
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 let storageAvailable = true;
 function toast(message) {
  $('toast').textContent = message; $('toast').classList.add('visible');
@@ -78,23 +79,24 @@ function relayout() {
  beads.forEach(b=>{
   const radius=b.size/2*nextScale;
   if(b.radius)Body.scale(b.body,radius/b.radius,radius/b.radius);
-  b.radius=radius;b.body.frictionAir=.033;
+  b.radius=radius;
  });
  scale=nextScale;targets=layout.points.map(p=>({x:CENTER+p.x*scale,y:CENTER+p.y*scale}));
- beads.forEach(b=>{keepInside(b);if(mode==='loose')Matter.Sleeping.set(b.body,false);});
+ dynamics.configure(beads,targets);
 }
 function createBead(data) {
  const b={id:data.id||makeId(),material:data.material,size:data.size,radius:data.size/2*scale};
- b.body=Bodies.circle(data.x??CENTER,data.y??CENTER,b.radius,{restitution:.36,friction:.06,frictionStatic:.1,frictionAir:.033,density:.0015,sleepThreshold:45});
+ b.body=Bodies.circle(data.x??CENTER,data.y??CENTER,b.radius,dynamics.bodyOptions());
  Composite.add(engine.world,b.body);return b;
 }
 function endDrag(cancel=false) {
  if(!drag)return;const d=drag;drag=null;
  try{if(canvas.hasPointerCapture(d.pointerId))canvas.releasePointerCapture(d.pointerId);}catch{}
  const b=beads.find(b=>b.id===d.id);
- if(b){Body.setStatic(b.body,false);if(mode==='loose')Body.setVelocity(b.body,cancel?{x:0,y:0}:d.velocity);}
+ // The drag spring leaves its actual momentum in the body on release.
+ dynamics.detour=null;
  if(!cancel&&d.moved&&mode==='strung'&&b){
-  const targetAngle=(Math.atan2(b.body.position.y-CENTER,b.body.position.x-CENTER)+Math.PI/2+TAU)%TAU;
+  const targetAngle=(Math.atan2(d.target.y-CENTER,d.target.x-CENTER)+Math.PI/2+TAU)%TAU;
   const slots=targets.map(p=>(Math.atan2(p.y-CENTER,p.x-CENTER)+Math.PI/2+TAU)%TAU);
   let nearest=0,distance=Infinity;
   slots.forEach((a,i)=>{const diff=Math.abs(a-targetAngle),dist=Math.min(diff,TAU-diff);if(dist<distance){distance=dist;nearest=i;}});
@@ -102,31 +104,22 @@ function endDrag(cancel=false) {
  }
  updateUI();scheduleSave();
 }
-function applyDesign(data,{record=false,animate=false}={}) {
+function applyDesign(data,{record=false}={}) {
  const valid=validateDesign(data);if(record)checkpoint();endDrag(true);
  Composite.clear(engine.world,false);Engine.clear(engine);
- beads=valid.beads.map(createBead);mode=valid.mode;selected=null;$('design-name').value=valid.name;
- relayout();if(mode==='strung'&&!animate)beads.forEach((b,i)=>Body.setPosition(b.body,targets[i]));
+ beads=valid.beads.map(createBead);mode=valid.mode;dynamics.mode=mode;selected=null;$('design-name').value=valid.name;
+ relayout();
+ dynamics.setMode(mode,{restore:true});
  updateUI();scheduleSave();
 }
-function presetDesign(p) {return {version:1,name:p.name,mode:'strung',beads:p.beads.map(b=>({...b,id:makeId(),x:CENTER,y:CENTER}))};}
-function keepInside(b) {
- const p=b.body.position,dx=p.x-CENTER,dy=p.y-CENTER,len=Math.hypot(dx,dy),limit=TRAY_RADIUS-b.radius-3;
- if(len>limit&&len>0){
-  const nx=dx/len,ny=dy/len,v=b.body.velocity,out=v.x*nx+v.y*ny;
-  Body.setPosition(b.body,{x:CENTER+nx*limit,y:CENTER+ny*limit});
-  if(out>0)Body.setVelocity(b.body,{x:v.x-1.3*out*nx,y:v.y-1.3*out*ny});
- }
+function presetDesign(p) {
+ const layout=ringLayout(p.beads),biggest=Math.max(6,...p.beads.map(b=>b.size))/2;
+ const pixels=Math.min(5.3,(TRAY_RADIUS-22)/(layout.radius+biggest||1));
+ return {version:1,name:p.name,mode:'strung',beads:p.beads.map((b,i)=>({...b,id:makeId(),x:CENTER+layout.points[i].x*pixels,y:CENTER+layout.points[i].y*pixels}))};
 }
 function setMode(next) {
  if(next===mode)return;checkpoint();endDrag(true);mode=next;
- if(mode==='loose')beads.forEach((b,i)=>{
-  Body.setStatic(b.body,false);
-  const a=Math.atan2(b.body.position.y-CENTER,b.body.position.x-CENTER)+.35;
-  Body.setVelocity(b.body,{x:Math.cos(a)*(1.6+i%3*.35),y:Math.sin(a)*(1.6+i%3*.35)});
-  Matter.Sleeping.set(b.body,false);
- });
- else beads.forEach(b=>{Body.setVelocity(b.body,{x:0,y:0});Body.setAngularVelocity(b.body,0);});
+ dynamics.setMode(next);
  updateUI();scheduleSave();
 }
 function addBead(material) {
@@ -231,26 +224,31 @@ function drawTray(context){
 function render(context=ctx,{exporting=false}={}) {
  context.save();context.scale(context.canvas.width/640,context.canvas.width/640);drawTray(context);
  if(mode==='strung'&&beads.length>2){
-  context.beginPath();beads.forEach((b,i)=>{const p=exporting?targets[i]:b.body.position;i?context.lineTo(p.x,p.y):context.moveTo(p.x,p.y);});context.closePath();context.strokeStyle='#b6ac8980';context.lineWidth=1;context.stroke();
+  beads.forEach((b,i)=>{
+   const next=beads[(i+1)%beads.length],p=b.body.position,q=next.body.position;
+   const distance=Math.hypot(q.x-p.x,q.y-p.y),contact=b.radius+next.radius;
+   const opacity=Math.max(0,Math.min(1,(contact*1.6-distance)/(contact*.6)));
+   if(!opacity)return;
+   context.beginPath();context.moveTo(p.x,p.y);context.lineTo(q.x,q.y);
+   context.strokeStyle='rgba(151,140,106,'+(opacity*.55)+')';context.lineWidth=1;context.stroke();
+  });
  }
  beads.forEach((b,i)=>{
   if(drag&&b.id===drag.id)return;
-  const p=exporting&&mode==='strung'?targets[i]:b.body.position;
-  drawBead(context,byId[b.material],p.x,p.y,b.radius,mode==='loose'?b.body.angle*.15:0,!exporting&&selected===b.id);
+  const p=b.body.position;
+  drawBead(context,byId[b.material],p.x,p.y,b.radius,b.body.angle*.15,!exporting&&selected===b.id);
  });
- if(drag){const b=beads.find(b=>b.id===drag.id);if(b)drawBead(context,byId[b.material],b.body.position.x,b.body.position.y,b.radius,0,!exporting);}
+ if(drag){const b=beads.find(b=>b.id===drag.id);if(b)drawBead(context,byId[b.material],b.body.position.x,b.body.position.y,b.radius,b.body.angle*.15,!exporting);}
  context.restore();
 }
 function tick(now){
  const elapsed=Math.min(now-lastTime||16.67,50);lastTime=now;
- if(mode==='loose'){
-  accumulator+=elapsed;let steps=0;
-  while(accumulator>=1000/60&&steps<3){Engine.update(engine,1000/60);beads.forEach(keepInside);accumulator-=1000/60;steps++;}
-  if(now-lastStoreTime>3000&&!drag){persist();lastStoreTime=now;}
- }else{
-  accumulator=0;const lerp=reducedMotion?1:1-Math.exp(-elapsed/90);
-  beads.forEach((b,i)=>{if(drag?.id===b.id)return;const p=b.body.position,t=targets[i];if(!t)return;Body.setPosition(b.body,{x:p.x+(t.x-p.x)*lerp,y:p.y+(t.y-p.y)*lerp});Body.setVelocity(b.body,{x:0,y:0});});
+ accumulator+=elapsed;let steps=0;
+ while(accumulator>=BeadDynamics.STEP&&steps<6){
+  dynamics.step(BeadDynamics.STEP,drag);accumulator-=BeadDynamics.STEP;steps++;
  }
+ if(now-lastStoreTime>3000&&!drag){persist();lastStoreTime=now;}
+ $('tray-caption').style.opacity=!beads.length||(mode==='strung'&&beads.length>5&&dynamics.settled)?'1':'0';
  render();requestAnimationFrame(tick);
 }
 function pointerPosition(event){const rect=canvas.getBoundingClientRect();return {x:(event.clientX-rect.left)/rect.width*640,y:(event.clientY-rect.top)/rect.height*640};}
@@ -258,18 +256,18 @@ canvas.addEventListener('pointerdown',event=>{
  if(event.button!==0||drag)return;const p=pointerPosition(event);
  let b=[...beads].reverse().find(b=>Math.hypot(b.body.position.x-p.x,b.body.position.y-p.y)<=b.radius+7);
  selected=b?.id??null;updateSelection();renderSequence();if(!b)return;
- event.preventDefault();drag={before:snapshot(),id:b.id,pointerId:event.pointerId,start:p,last:p,lastAt:event.timeStamp,moved:false,velocity:{x:0,y:0},offset:{x:b.body.position.x-p.x,y:b.body.position.y-p.y}};
- canvas.setPointerCapture(event.pointerId);canvas.focus({preventScroll:true});Body.setStatic(b.body,true);
+ event.preventDefault();drag={before:snapshot(),id:b.id,pointerId:event.pointerId,start:p,last:p,lastAt:event.timeStamp,moved:false,target:{x:b.body.position.x,y:b.body.position.y},offset:{x:b.body.position.x-p.x,y:b.body.position.y-p.y}};
+ dynamics.detour=null;
+ canvas.setPointerCapture(event.pointerId);canvas.focus({preventScroll:true});
 });
 canvas.addEventListener('pointermove',event=>{
  if(!drag||drag.pointerId!==event.pointerId)return;
  const p=pointerPosition(event),b=beads.find(b=>b.id===drag.id);if(!b)return;
  if(!drag.moved&&Math.hypot(p.x-drag.start.x,p.y-drag.start.y)>4){checkpoint(drag.before);drag.moved=true;}
- const dt=Math.max(8,event.timeStamp-drag.lastAt);
- drag.velocity={x:Math.max(-6,Math.min(6,(p.x-drag.last.x)*16/dt)),y:Math.max(-6,Math.min(6,(p.y-drag.last.y)*16/dt))};
  const next={x:p.x+drag.offset.x,y:p.y+drag.offset.y};
- Body.setPosition(b.body,next);keepInside(b);drag.last=p;drag.lastAt=event.timeStamp;
- if(mode==='loose')beads.forEach(other=>Matter.Sleeping.set(other.body,false));
+ const dx=next.x-CENTER,dy=next.y-CENTER,d=Math.hypot(dx,dy),limit=TRAY_RADIUS-b.radius-3;
+ drag.target=d>limit?{x:CENTER+dx/d*limit,y:CENTER+dy/d*limit}:next;
+ drag.last=p;drag.lastAt=event.timeStamp;
 });
 canvas.addEventListener('pointerup',e=>{if(drag?.pointerId===e.pointerId)endDrag();});
 canvas.addEventListener('pointercancel',()=>endDrag(true));

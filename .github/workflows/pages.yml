@@ -19,11 +19,14 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - name: 检查脚本
-        run: node --check app.js
+        run: |
+          node --check app.js
+          node --check dynamics.js
+          node --test tests/dynamics.test.cjs
       - name: 整理静态网页
         run: |
           mkdir _site
-          cp index.html styles.css app.js favicon.svg .nojekyll _site/
+          cp index.html styles.css app.js dynamics.js favicon.svg .nojekyll _site/
           cp -R assets vendor _site/
       - uses: actions/upload-pages-artifact@v4
         with:
