@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#214d43">
+<meta name="description" content="在珠间自由搭配你的手串。挑选珠子, 拖动碰撞, 收拢成串, 把灵感留在手边。">
+<title>珠间 · 自由串珠工作台</title>
+<link rel="icon" type="image/svg+xml" href="./favicon.svg">
+<link rel="stylesheet" href="./styles.css">
+<script src="./vendor/matter.min.js" defer></script>
+<script src="./app.js" defer></script>
+</head>
+<body>
+<header class="site-header">
+  <a class="brand" href="./" aria-label="珠间首页"><svg viewBox="0 0 42 42" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="4"><circle cx="21" cy="9" r="4"/><circle cx="32" cy="16" r="4"/><circle cx="28" cy="30" r="4"/><circle cx="14" cy="30" r="4"/><circle cx="10" cy="16" r="4"/></g></svg><span>珠间<small>BEAD ATELIER</small></span></a>
+  <span class="header-note">把喜欢的颜色，串在一起</span>
+  <div class="header-actions"><button class="button quiet" id="open-saves"><span aria-hidden="true">▱</span> 我的搭配 <span class="save-count" id="save-count">0</span></button><button class="button primary" id="save-design">保存搭配 <span aria-hidden="true">＋</span></button></div>
+</header>
+<main>
+<div class="workspace-heading"><div><p class="eyebrow">A LITTLE TIME FOR YOURSELF</p><h1>今天，想串点什么？</h1></div><p>选一颗珠子，慢慢搭配。</p></div>
+<div class="workspace">
+<aside class="materials panel">
+  <div class="panel-title"><h2>挑选珠子</h2><span>12 种材质</span></div>
+  <div class="filters" role="group" aria-label="珠子分类"><button class="active" data-filter="all" aria-pressed="true">全部</button><button data-filter="crystal" aria-pressed="false">晶石</button><button data-filter="natural" aria-pressed="false">天然</button><button data-filter="accent" aria-pressed="false">点缀</button></div>
+  <div class="size-block"><span>添加珠径</span><div id="add-sizes" class="size-options" role="group" aria-label="添加珠径"></div></div>
+  <div class="material-grid" id="material-grid"></div>
+  <p class="muted catalog-hint">点击珠子，即可加入盘中</p>
+  <div class="inspiration"><span class="eyebrow">一点灵感</span><h3>从一组配色开始</h3><div class="preset-list" id="presets"></div></div>
+</aside>
+<section class="studio" aria-label="串珠工作台">
+  <div class="studio-toolbar"><div class="mode-switch" role="group" aria-label="工作台模式"><button id="mode-strung" class="active" aria-pressed="true">成串预览</button><button id="mode-loose" aria-pressed="false">散珠互动</button></div><div class="tool-buttons"><button id="undo" class="icon-button" title="撤销 (Ctrl+Z)" aria-label="撤销">↶</button><button id="redo" class="icon-button" title="重做 (Ctrl+Shift+Z)" aria-label="重做">↷</button><button id="clear" class="icon-button" title="清空工作台" aria-label="清空工作台"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5m4-5v5"/></svg></button></div></div>
+  <div class="tray-wrap"><canvas id="bead-canvas" width="1280" height="1280" aria-label="串珠盘, 可拖动珠子; 也可用下方珠子顺序列表和编辑按钮操作" tabindex="0"></canvas><div class="tray-caption" id="tray-caption"><span class="tiny-mark">✳</span><span id="tray-caption-text">一颗一颗，都是你的选择</span></div></div>
+  <div class="studio-bottom"><p id="interaction-hint"><span aria-hidden="true">✥</span> 拖动珠子换位 · 点击珠子编辑</p><button id="toggle-mode" class="button primary large">散开玩一会 <span aria-hidden="true">⤢</span></button></div>
+  <div class="studio-notes"><span id="autosave-status">草稿自动保存在此浏览器</span><button id="help-button" class="text-button">怎么玩？</button></div>
+</section>
+<aside class="design panel">
+  <div class="panel-title"><h2>这串的模样</h2><span class="mini-label" id="mode-label">成串中</span></div>
+  <label class="name-label" for="design-name">搭配名称</label><input id="design-name" maxlength="40" value="一抹春色" aria-label="搭配名称">
+  <div class="design-stats"><div><strong id="bead-count">20</strong><span>颗珠子</span></div><div><strong id="inner-size">14.8<small> cm</small></strong><span>参考内围 <button class="info-button" id="size-info" aria-label="查看参考内围说明">ⓘ</button></span></div></div>
+  <div class="selection-heading"><h3>当前珠子</h3><span id="selection-index">选择一颗珠子</span></div>
+  <div id="selection-empty" class="selection-empty">点击盘中或下方的珠子<br>调整珠径、复制或移除</div>
+  <div id="selection-editor" hidden><div class="selected-material"><canvas id="selected-preview" width="120" height="120" aria-hidden="true"></canvas><div><strong id="selected-name"></strong><span id="selected-detail"></span></div></div><div id="edit-sizes" class="size-options" role="group" aria-label="调整选中珠径"></div><div class="edit-actions"><button class="button" id="duplicate">复制一颗</button><button class="button" id="remove">移除</button></div><div class="reorder-actions"><button class="text-button" id="move-prev">← 前一位</button><button class="text-button" id="move-next">后一位 →</button></div></div>
+  <div class="sequence-heading"><h3>珠子顺序</h3><span>顺时针排列</span></div><div id="sequence" class="sequence" aria-label="按顺时针排列的珠子"></div>
+  <div class="export-actions"><button class="button wide" id="export-png"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M5 15v5h14v-5"/></svg> 导出搭配图</button><div><button class="text-button" id="export-json">导出搭配文件</button><label class="text-button import-label">导入文件<input type="file" id="import-json" accept=".json,application/json" hidden></label></div></div>
+</aside>
+</div>
+<footer><span>珠间 <span class="footer-dot">·</span> 给灵感一点闲暇</span><span>材质为视觉模拟，实物色泽与尺寸可能不同</span></footer>
+</main>
+<dialog id="saves-dialog"><div class="dialog-heading"><div><p class="eyebrow">YOUR COLLECTION</p><h2>我的搭配</h2></div><button class="icon-button" data-close="saves-dialog" aria-label="关闭我的搭配">×</button></div><p class="muted">保存在当前浏览器中，也可以导出文件留存。</p><div id="saves-list"></div></dialog>
+<dialog id="help-dialog"><div class="dialog-heading"><h2>慢慢串，随心玩</h2><button class="icon-button" data-close="help-dialog" aria-label="关闭帮助">×</button></div><ol class="help-list"><li><strong>挑选</strong><p>选择珠径，再点击喜欢的材质，珠子就会加入盘中。</p></li><li><strong>搭配</strong><p>成串时拖动珠子换位。点击珠子可调整尺寸、复制或移除；也可以在顺序列表中选择并用前后按钮移动。</p></li><li><strong>把玩</strong><p>切换到散珠互动，拖动一颗珠子撞开其他珠子。点击收拢成串，回到当前搭配顺序。</p></li><li><strong>留存</strong><p>保存到我的搭配，或导出图片与搭配文件。自动草稿只在当前浏览器保存。</p></li></ol><p class="muted">快捷键：Ctrl / ⌘ + Z 撤销，Shift + Ctrl / ⌘ + Z 重做。选中珠子后可按 Delete 移除、方向键换位。最多容纳 60 颗。</p></dialog>
+<div id="toast" role="status" aria-live="polite"></div>
+<noscript>请启用 JavaScript 以使用串珠工作台。</noscript>
+</body></html>
